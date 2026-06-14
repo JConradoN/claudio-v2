@@ -93,7 +93,8 @@ async def run() -> None:
     _sd_notify("STOPPING=1")
 
     await telegram.stop()
-    await model_manager.unload_all()
+    # Não descarregar o modelo no shutdown/restart — 27b-only, VRAM não precisa ser liberada.
+    # Unload na reinicialização cria race condition com o novo processo (keep_alive: 0 vs 4h).
     audit.close()
 
     log.info("shutdown completo")

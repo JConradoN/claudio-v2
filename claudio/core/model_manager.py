@@ -61,15 +61,34 @@ class ModelManager:
             self._current = None
 
     async def ensure(self, model: str) -> None:
-        """Garante que `model` está na VRAM. Compara por nome normalizado."""
+        """Garante que `model` está na VRAM. Verifica estado real no Ollama."""
         async with self._lock:
-            if self._current is not None:
-                if _normalize_model_name(self._current) == _normalize_model_name(model):
-                    # Modelo já carregado — renova keep_alive sem unload/reload
-                    await self._refresh_keep_alive(self._current)
-                    return
-                await self._unload(self._current)
+            # Consulta o que o Ollama tem de fato na VRAM agora
+            actual = await self._get_loaded_model()
+
+            if actual is not None and _normalize_model_name(actual) == _normalize_model_name(model):
+                # Modelo já carregado — o keep_alive da chamada subsequente /api/chat renova o timer
+                self._current = actual
+                return
+
+            # Tem outro modelo carregado → descarrega primeiro
+            if actual is not None:
+                log.info("model_manager: modelo diferente na VRAM (%s), descarregando", actual)
+                await self._unload(actual)
+
+            self._current = None
             await self._load(model)
+
+    async def _get_loaded_model(self) -> str | None:
+        """Consulta /api/ps e retorna o nome do modelo atualmente na VRAM."""
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(f"{self._base_url}/api/ps")
+                r.raise_for_status()
+                models = r.json().get("models", [])
+                return models[0]["name"] if models else None
+        except Exception:
+            return self._current  # fallback para estado local se Ollama não responder
 
     async def unload_all(self) -> None:
         """Descarrega qualquer modelo carregado. Usado no shutdown."""
