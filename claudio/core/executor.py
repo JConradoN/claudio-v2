@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, AsyncIterator, Any
 
 import httpx
 
+from claudio.core.model_manager import _KEEP_ALIVE
 from claudio.core.tools import TOOL_SCHEMAS, run_bash
 
 if TYPE_CHECKING:
@@ -151,6 +152,7 @@ class Executor:
             "messages": messages,
             "stream": False,
             "think": False,
+            "keep_alive": _KEEP_ALIVE,
             "options": {"temperature": 0.7, "num_ctx": 8192},
         }
         if use_tools:
@@ -183,6 +185,7 @@ class Executor:
                     "messages": messages,
                     "stream": True,
                     "think": False,
+                    "keep_alive": _KEEP_ALIVE,
                     "options": {"temperature": 0.7, "num_ctx": 8192},
                 },
             ) as r:

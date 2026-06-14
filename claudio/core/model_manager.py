@@ -11,6 +11,16 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("claudio.model_manager")
 
+_KEEP_ALIVE = "4h"   # valor explícito em TODAS as chamadas ao Ollama
+
+
+def _normalize_model_name(name: str) -> str:
+    """Remove sufixos de quantização para comparação — 'qwen3.5:27b-q4_K_M' == 'qwen3.5:27b'."""
+    # Mantém apenas 'familia:tag_base' sem sufixos de quantização
+    if "-q" in name.lower():
+        name = name[:name.lower().index("-q")]
+    return name.lower().strip()
+
 
 class ModelUnavailableError(Exception):
     pass
@@ -27,7 +37,7 @@ class ModelManager:
         self._base_url = config.ollama_url.rstrip("/")
         self._timeout = config.ollama_timeout_s
         self._lock = asyncio.Lock()
-        self._current: str | None = None  # UNKNOWN até probe()
+        self._current: str | None = None
 
     @property
     def current(self) -> str | None:
@@ -51,11 +61,13 @@ class ModelManager:
             self._current = None
 
     async def ensure(self, model: str) -> None:
-        """Garante que `model` está na VRAM. Descarrega o atual se diferente."""
+        """Garante que `model` está na VRAM. Compara por nome normalizado."""
         async with self._lock:
-            if self._current == model:
-                return
             if self._current is not None:
+                if _normalize_model_name(self._current) == _normalize_model_name(model):
+                    # Modelo já carregado — renova keep_alive sem unload/reload
+                    await self._refresh_keep_alive(self._current)
+                    return
                 await self._unload(self._current)
             await self._load(model)
 
@@ -75,6 +87,17 @@ class ModelManager:
         except Exception as exc:
             return {"error": str(exc), "current": self._current}
 
+    async def _refresh_keep_alive(self, model: str) -> None:
+        """Renova o keep_alive sem recarregar — evita expiry silencioso."""
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(
+                    f"{self._base_url}/api/generate",
+                    json={"model": model, "prompt": "", "keep_alive": _KEEP_ALIVE},
+                )
+        except Exception as exc:
+            log.warning("model_manager: refresh keep_alive falhou: %s", exc)
+
     async def _unload(self, model: str) -> None:
         log.info("model_manager: descarregando %s", model)
         try:
@@ -88,17 +111,17 @@ class ModelManager:
         self._current = None
 
     async def _load(self, model: str) -> None:
-        log.info("model_manager: carregando %s (warmup)", model)
+        log.info("model_manager: carregando %s", model)
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:
                     r = await client.post(
                         f"{self._base_url}/api/generate",
-                        json={"model": model, "prompt": "", "keep_alive": "1h"},
+                        json={"model": model, "prompt": "", "keep_alive": _KEEP_ALIVE},
                     )
                     r.raise_for_status()
                 self._current = model
-                log.info("model_manager: %s carregado", model)
+                log.info("model_manager: %s carregado (keep_alive=%s)", model, _KEEP_ALIVE)
                 return
             except Exception as exc:
                 log.warning("model_manager: tentativa %d/3 falhou: %s", attempt + 1, exc)
