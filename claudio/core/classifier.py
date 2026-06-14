@@ -80,6 +80,11 @@ _COMMAND_RULES: list[tuple[str, bool, str, list[str], str | None, list[str]]] = 
     ("container", False, "execute", ["run_bash"], None, ["docker"]),
     ("log", False, "execute", ["read_log_tail"], None, ["logs"]),
     ("servico", False, "execute", ["run_bash_readonly"], None, ["service"]),
+    ("saude do servidor", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
+    ("status do servidor", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
+    ("servidor esta", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
+    ("temperatura", False, "execute", ["run_bash_readonly"], None, ["system", "thermal"]),
+    ("gpu", False, "execute", ["run_bash_readonly"], None, ["system", "gpu"]),
 ]
 
 
