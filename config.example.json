@@ -1,0 +1,23 @@
+{
+  "telegram_bot_token": "SEU_TOKEN_AQUI",
+  "telegram_allowed_user_ids": [123456789],
+  "telegram_allowed_group_ids": [],
+  "ollama_url": "http://localhost:11434",
+  "default_model": "qwen3.5:27b",
+  "ollama_timeout_s": 900,
+  "model_warmup_on_startup": true,
+  "chatapi_port": 18790,
+  "chatapi_host": "127.0.0.1",
+  "mem0_collection": "claudio",
+  "embed_model": "nomic-embed-text",
+  "memory_extraction_min_turns": 3,
+  "config_dir": "~/.claudio",
+  "logs_dir": "~/.claudio/logs",
+  "cron_db": "~/.claudio/cron.db",
+  "runs_db": "~/.claudio/runs.db",
+  "agent_mesh_db": "~/.agent-mesh/state.db",
+  "default_security_profile": "execute",
+  "log_retention_days": 30,
+  "agentforge_path": "~/repos/estudo/agents-framework",
+  "agentforge_agents_dir": "~/repos/estudo/agents-framework/agents"
+}

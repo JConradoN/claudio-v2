@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+import httpx
+
+if TYPE_CHECKING:
+    from claudio.config import Config
+
+log = logging.getLogger("claudio.model_manager")
+
+
+class ModelUnavailableError(Exception):
+    pass
+
+
+class ModelManager:
+    """
+    State machine para gerenciar qual modelo está carregado na VRAM.
+    asyncio.Lock garante que apenas uma operação de carga/descarga ocorre por vez.
+    """
+
+    def __init__(self, config: "Config") -> None:
+        self._config = config
+        self._base_url = config.ollama_url.rstrip("/")
+        self._timeout = config.ollama_timeout_s
+        self._lock = asyncio.Lock()
+        self._current: str | None = None  # UNKNOWN até probe()
+
+    @property
+    def current(self) -> str | None:
+        return self._current
+
+    async def probe(self) -> None:
+        """Consulta /api/ps e descobre o estado atual do Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{self._base_url}/api/ps")
+                r.raise_for_status()
+                models = r.json().get("models", [])
+                if models:
+                    self._current = models[0]["name"]
+                    log.info("model_manager: modelo já carregado: %s", self._current)
+                else:
+                    self._current = None
+                    log.info("model_manager: nenhum modelo carregado")
+        except Exception as exc:
+            log.warning("model_manager: probe falhou: %s", exc)
+            self._current = None
+
+    async def ensure(self, model: str) -> None:
+        """Garante que `model` está na VRAM. Descarrega o atual se diferente."""
+        async with self._lock:
+            if self._current == model:
+                return
+            if self._current is not None:
+                await self._unload(self._current)
+            await self._load(model)
+
+    async def unload_all(self) -> None:
+        """Descarrega qualquer modelo carregado. Usado no shutdown."""
+        async with self._lock:
+            if self._current is not None:
+                await self._unload(self._current)
+
+    async def status(self) -> dict:
+        """Estado atual do Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(f"{self._base_url}/api/ps")
+                r.raise_for_status()
+                return {"loaded": r.json().get("models", []), "current": self._current}
+        except Exception as exc:
+            return {"error": str(exc), "current": self._current}
+
+    async def _unload(self, model: str) -> None:
+        log.info("model_manager: descarregando %s", model)
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.post(
+                    f"{self._base_url}/api/generate",
+                    json={"model": model, "keep_alive": 0},
+                )
+        except Exception as exc:
+            log.warning("model_manager: falha ao descarregar %s: %s", model, exc)
+        self._current = None
+
+    async def _load(self, model: str) -> None:
+        log.info("model_manager: carregando %s (warmup)", model)
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
+                    r = await client.post(
+                        f"{self._base_url}/api/generate",
+                        json={"model": model, "prompt": "", "keep_alive": "1h"},
+                    )
+                    r.raise_for_status()
+                self._current = model
+                log.info("model_manager: %s carregado", model)
+                return
+            except Exception as exc:
+                log.warning("model_manager: tentativa %d/3 falhou: %s", attempt + 1, exc)
+                if attempt < 2:
+                    await asyncio.sleep(5 * (2 ** attempt))
+        raise ModelUnavailableError(f"Não foi possível carregar {model} após 3 tentativas")

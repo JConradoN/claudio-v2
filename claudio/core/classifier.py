@@ -1,0 +1,109 @@
+from __future__ import annotations
+
+import re
+import unicodedata
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from claudio.config import Config
+
+# Portado de aurelia/internal/telegram/commands.go — MatchCommand()
+
+
+@dataclass(frozen=True)
+class IntentResult:
+    type: str
+    tools: list[str] = field(default_factory=list)
+    agent: str | None = None
+    context_hints: list[str] = field(default_factory=list)
+    confidence: float = 1.0
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text.lower())
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def _looks_narrative(text: str, keyword: str) -> bool:
+    """Anti-false-positive: 2+ palavras significativas antes da keyword → skip."""
+    idx = text.find(keyword)
+    if idx < 0:
+        return False
+    before = text[:idx].strip().split()
+    stopwords = {"o", "a", "os", "as", "um", "uma", "de", "do", "da", "no", "na", "e", "é"}
+    significant = [w for w in before if w not in stopwords and len(w) > 2]
+    return len(significant) >= 2
+
+
+# Mapa: keyword → (tipo, tools, agent, context_hints)
+# ordem importa: mais específico primeiro
+_COMMAND_RULES: list[tuple[str, bool, str, list[str], str | None, list[str]]] = [
+    # (keyword, exact_match, type, tools, agent, context_hints)
+
+    # Cron
+    ("todo dia", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda semana", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda segunda", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda terca", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda quarta", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda quinta", False, "cron", [], None, ["schedule", "recurring"]),
+    ("toda sexta", False, "cron", [], None, ["schedule", "recurring"]),
+    ("todo sabado", False, "cron", [], None, ["schedule", "recurring"]),
+    ("todo domingo", False, "cron", [], None, ["schedule", "recurring"]),
+    ("daqui", False, "cron", [], None, ["schedule", "once"]),
+    ("hoje as", False, "cron", [], None, ["schedule", "once"]),
+    ("amanha as", False, "cron", [], None, ["schedule", "once"]),
+    ("agendar", False, "cron", [], None, ["schedule"]),
+    ("lembrar", False, "cron", [], None, ["schedule", "reminder"]),
+    ("alarme", False, "cron", [], None, ["schedule", "alarm"]),
+
+    # Debug / observabilidade (exact)
+    ("/debug", True, "command", [], None, []),
+    ("/status", True, "command", [], None, []),
+    ("/cron", True, "command", [], None, []),
+    ("/reset", True, "command", [], None, []),
+
+    # Delegate para agente
+    ("pesquisa", False, "research", ["http_get"], None, ["research", "web"]),
+    ("procura", False, "research", ["http_get"], None, ["research", "web"]),
+
+    # Execute (comandos de shell/sistema)
+    ("execute", False, "execute", ["run_bash"], None, []),
+    ("roda", False, "execute", ["run_bash"], None, []),
+    ("quanto espaco", False, "execute", ["run_bash_readonly"], None, ["disk", "storage"]),
+    ("memoria ram", False, "execute", ["run_bash_readonly"], None, ["memory", "system"]),
+    ("cpu", False, "execute", ["run_bash_readonly"], None, ["system"]),
+    ("docker", False, "execute", ["run_bash"], None, ["docker"]),
+    ("container", False, "execute", ["run_bash"], None, ["docker"]),
+    ("log", False, "execute", ["read_log_tail"], None, ["logs"]),
+    ("servico", False, "execute", ["run_bash_readonly"], None, ["service"]),
+]
+
+
+class IntentClassifier:
+    """
+    Classificador heurístico (heurística primeiro, LLM 27b como fallback).
+    Cobre ~80% dos casos sem LLM.
+    """
+
+    def __init__(self, config: "Config") -> None:
+        self._config = config
+
+    async def classify(self, text: str, history: list[Any] = []) -> IntentResult:
+        normalized = _strip_accents(text.strip())
+
+        # Comandos exact-match (prefixo /)
+        first_word = normalized.split()[0] if normalized.split() else ""
+        for keyword, exact, intent_type, tools, agent, hints in _COMMAND_RULES:
+            if exact:
+                if first_word == keyword or normalized == keyword:
+                    return IntentResult(intent_type, tools[:3], agent, hints)
+            else:
+                if keyword in normalized and not _looks_narrative(normalized, keyword):
+                    return IntentResult(intent_type, tools[:3], agent, hints)
+
+        # Fallback: chat simples (sem LLM na Fase 1 — adicionado na Fase 2)
+        return IntentResult("chat", [], None, [], confidence=1.0)

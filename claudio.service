@@ -1,0 +1,16 @@
+[Unit]
+Description=Cláudio v2 — assistente pessoal
+After=network.target
+
+[Service]
+Type=notify
+ExecStart=%h/.local/bin/claudio
+WorkingDirectory=%h
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+# Override model via env se necessário:
+# Environment=CLAUDIO_MODEL=qwen3.5:27b
+
+[Install]
+WantedBy=default.target
