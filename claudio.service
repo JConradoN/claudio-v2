@@ -3,14 +3,13 @@ Description=Cláudio v2 — assistente pessoal
 After=network.target
 
 [Service]
-Type=notify
-ExecStart=%h/.local/bin/claudio
-WorkingDirectory=%h
+Type=simple
+ExecStart=%h/.local/share/claudio-venv/bin/python -m claudio.main
+WorkingDirectory=%h/repos/projetos/claudio-v2
+Environment=PYTHONPATH=%h/repos/projetos/claudio-v2
+Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=5
-Environment=PYTHONUNBUFFERED=1
-# Override model via env se necessário:
-# Environment=CLAUDIO_MODEL=qwen3.5:27b
 
 [Install]
 WantedBy=default.target
