@@ -33,9 +33,18 @@ def _looks_narrative(text: str, keyword: str) -> bool:
     if idx < 0:
         return False
     before = text[:idx].strip().split()
-    stopwords = {"o", "a", "os", "as", "um", "uma", "de", "do", "da", "no", "na", "e", "é"}
+    stopwords = {
+        "o", "a", "os", "as", "um", "uma", "de", "do", "da", "no", "na", "e", "e",
+        # pronomes/interrogativas PT-BR que precedem perguntas
+        "como", "qual", "quais", "quando", "quanto", "quantos", "quanta",
+        "voce", "vc", "me", "nos", "seu", "sua",
+        # verbos auxiliares/cópula frequentes antes do tema
+        "esta", "estao", "esta", "estamos", "tem", "ha", "eh", "sao",
+        # preposições/conjunções
+        "que", "se", "por", "para", "com", "em", "ao", "pelo", "pela",
+    }
     significant = [w for w in before if w not in stopwords and len(w) > 2]
-    return len(significant) >= 2
+    return len(significant) >= 3
 
 
 # Mapa: keyword → (tipo, tools, agent, context_hints)
@@ -67,24 +76,29 @@ _COMMAND_RULES: list[tuple[str, bool, str, list[str], str | None, list[str]]] = 
     ("/reset", True, "command", [], None, []),
 
     # Delegate para agente
-    ("pesquisa", False, "research", ["http_get"], None, ["research", "web"]),
-    ("procura", False, "research", ["http_get"], None, ["research", "web"]),
+    ("pesquisa", False, "research", ["run_bash"], None, ["research", "web"]),
+    ("procura", False, "research", ["run_bash"], None, ["research", "web"]),
 
     # Execute (comandos de shell/sistema)
     ("execute", False, "execute", ["run_bash"], None, []),
     ("roda", False, "execute", ["run_bash"], None, []),
-    ("quanto espaco", False, "execute", ["run_bash_readonly"], None, ["disk", "storage"]),
-    ("memoria ram", False, "execute", ["run_bash_readonly"], None, ["memory", "system"]),
-    ("cpu", False, "execute", ["run_bash_readonly"], None, ["system"]),
+    ("quanto espaco", False, "execute", ["run_bash"], None, ["disk", "storage"]),
+    ("memoria ram", False, "execute", ["run_bash"], None, ["memory", "system"]),
+    ("cpu", False, "execute", ["run_bash"], None, ["system"]),
     ("docker", False, "execute", ["run_bash"], None, ["docker"]),
     ("container", False, "execute", ["run_bash"], None, ["docker"]),
-    ("log", False, "execute", ["read_log_tail"], None, ["logs"]),
-    ("servico", False, "execute", ["run_bash_readonly"], None, ["service"]),
-    ("saude do servidor", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
-    ("status do servidor", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
-    ("servidor esta", False, "execute", ["run_bash_readonly"], None, ["system", "health"]),
-    ("temperatura", False, "execute", ["run_bash_readonly"], None, ["system", "thermal"]),
-    ("gpu", False, "execute", ["run_bash_readonly"], None, ["system", "gpu"]),
+    ("log", False, "execute", ["run_bash"], None, ["logs"]),
+    ("servico", False, "execute", ["run_bash"], None, ["service"]),
+    ("saude do servidor", False, "execute", ["run_bash"], None, ["system", "health"]),
+    ("saude do fox", False, "execute", ["run_bash"], None, ["system", "health"]),
+    ("status do servidor", False, "execute", ["run_bash"], None, ["system", "health"]),
+    ("servidor esta", False, "execute", ["run_bash"], None, ["system", "health"]),
+    ("temperatura", False, "execute", ["run_bash"], None, ["system", "thermal"]),
+    ("gpu", False, "execute", ["run_bash"], None, ["system", "gpu"]),
+    ("nvidia", False, "execute", ["run_bash"], None, ["system", "gpu"]),
+    ("vram", False, "execute", ["run_bash"], None, ["system", "gpu"]),
+    ("disco", False, "execute", ["run_bash"], None, ["disk"]),
+    ("systemctl", False, "execute", ["run_bash"], None, ["service"]),
 ]
 
 
