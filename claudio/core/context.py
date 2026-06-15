@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from claudio.config import Config
     from claudio.core.classifier import IntentResult
+    from claudio.memory.retrieval import MemoryManager
 
 IDENTITY_BLOCK = """Você é Cláudio, assistente pessoal do Conrado rodando localmente no fox-server.
 
@@ -20,7 +22,8 @@ Serviços ativos: n8n, qdrant, ollama, open-webui, aurelia, forte.jus, portainer
 Regras invioláveis:
 - Forte.jus e fox-vault: zero APIs externas, apenas Ollama local
 - Ações destrutivas (rm, docker stop, systemctl stop): peça confirmação explícita
-- Nunca inventar outputs de comandos não executados"""
+- Nunca inventar outputs de comandos não executados
+- Se não souber algo com certeza (histórico, versões anteriores, datas, configurações), diga explicitamente que não sabe — nunca invente"""
 
 _INTENT_HINTS: dict[str, str] = {
     "chat": "",
@@ -44,47 +47,77 @@ def _estimate_tokens(text: str) -> int:
 
 
 class ContextBuilder:
-    """
-    Monta o system prompt final.
-    Fase 1: identity + intent hints (mem0 e kuzu são stubs).
-    """
-
-    def __init__(self, config: "Config") -> None:
+    def __init__(self, config: "Config", memory: "MemoryManager | None" = None) -> None:
         self._config = config
+        self._memory = memory
 
     async def build(
         self,
         intent: "IntentResult",
         session: Any,
         max_tokens: int = 600,
+        user_message: str = "",
     ) -> str:
         blocks: list[ContextBlock] = []
 
-        identity = ContextBlock(IDENTITY_BLOCK, _estimate_tokens(IDENTITY_BLOCK), "identity")
-        blocks.append(identity)
+        # 1. Identity (nunca truncar)
+        blocks.append(ContextBlock(IDENTITY_BLOCK, _estimate_tokens(IDENTITY_BLOCK), "identity"))
 
-        # Intent instructions
+        # 2. Intent instructions
         hint = _INTENT_HINTS.get(intent.type, "")
         if hint:
             blocks.append(ContextBlock(hint, _estimate_tokens(hint), "intent"))
 
-        # Projeto ativo (se session tiver)
+        # 3. Projeto ativo
         project = getattr(session, "project", None)
         if project:
             proj_block = f"\nProjeto ativo: {project}"
             blocks.append(ContextBlock(proj_block, _estimate_tokens(proj_block), "project"))
 
-        # Stub: mem0 e kuzu retornam vazio na Fase 1
-        # Será substituído na Fase 2 por retrieval real
+        if self._memory and user_message:
+            query = user_message
+            hints = getattr(intent, "context_hints", [])
+            used = sum(b.token_estimate for b in blocks)
+            remaining = max_tokens - used - 20  # margem de 20 tokens
+
+            # Budget: 55% para mem0+agent_mesh, 35% para kuzu, 10% reserva
+            mem_budget = int(remaining * 0.55)
+            kuzu_budget = int(remaining * 0.35)
+
+            # 4. Memória episódica: mem0 + agent_mesh (paralelo)
+            mem_kuzu = await asyncio.gather(
+                self._memory.search(query=query, context_hints=hints, limit=5, max_tokens=mem_budget),
+                self._memory.search_kuzu(query=query, limit=4, max_tokens=kuzu_budget),
+                return_exceptions=True,
+            )
+            mem_fragments, kuzu_fragments = mem_kuzu
+
+            if isinstance(mem_fragments, list) and mem_fragments:
+                mem_lines = "\n".join(
+                    f"- [{f.source}] {f.fact}" for f in mem_fragments
+                )
+                mem_block = f"\nMemória:\n{mem_lines}"
+                blocks.append(ContextBlock(mem_block, _estimate_tokens(mem_block), "memory"))
+
+            # 5. Conhecimento estruturado: kuzu (decisões, modelos, tecnologias)
+            if isinstance(kuzu_fragments, list) and kuzu_fragments:
+                kuzu_lines = "\n".join(
+                    f"- [kuzu:{f.metadata.get('kuzu_type', 'graph')}] {f.fact}"
+                    for f in kuzu_fragments
+                )
+                kuzu_block = f"\nConhecimento:\n{kuzu_lines}"
+                blocks.append(ContextBlock(kuzu_block, _estimate_tokens(kuzu_block), "kuzu"))
 
         # Monta e verifica total
-        result = "\n".join(b.content for b in blocks)
         total_tokens = sum(b.token_estimate for b in blocks)
+        if total_tokens <= max_tokens:
+            return "\n".join(b.content for b in blocks).strip()
 
-        if total_tokens > max_tokens:
-            # Truncamento de emergência: mantém identity + intent, trunca o resto
-            result = "\n".join(
-                b.content for b in blocks if b.source in ("identity", "intent")
-            )
+        # Truncamento: kuzu primeiro, depois memória, depois projeto; nunca identity/intent
+        for source_to_drop in ("kuzu", "memory", "project"):
+            blocks = [b for b in blocks if b.source != source_to_drop]
+            total_tokens = sum(b.token_estimate for b in blocks)
+            if total_tokens <= max_tokens:
+                break
 
-        return result.strip()
+        return "\n".join(b.content for b in blocks).strip()
