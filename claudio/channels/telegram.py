@@ -569,7 +569,7 @@ class TelegramChannel:
         await self._send_response(update, response)
 
     async def _on_voice(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        """Processa mensagem de voz: transcreve via Groq, passa ao pipeline."""
+        """Processa mensagem de voz: transcreve via faster-whisper local, passa ao pipeline, responde com texto + áudio TTS."""
         if not update.message or not update.effective_user:
             return
         if not self._is_allowed(update.effective_user.id):
@@ -591,15 +591,14 @@ class TelegramChannel:
             await update.message.reply_text(f"Erro ao baixar áudio: {exc}")
             return
 
-        transcript = await self._transcribe_groq(bytes(audio_bytes))
+        from claudio.stt_tts import transcribe, synthesize
+        transcript = await transcribe(bytes(audio_bytes))
         if not transcript:
             await update.message.reply_text("Não consegui transcrever o áudio.")
             return
 
-        await update.message.reply_text(f"Transcrição: {transcript[:200]}")
+        await update.message.reply_text(f"_{transcript[:200]}_", parse_mode="Markdown")
 
-        # Passa a transcrição pelo pipeline normal
-        fake_update_text = transcript
         session = self._sessions.get_or_create(
             channel="telegram",
             channel_id=str(chat_id),
@@ -608,16 +607,16 @@ class TelegramChannel:
         )
 
         try:
-            intent = await self._classifier.classify(fake_update_text, session.history)
-            system_prompt = await self._ctx_builder.build(intent, session, user_message=fake_update_text)
+            intent = await self._classifier.classify(transcript, session.history)
+            system_prompt = await self._ctx_builder.build(intent, session, user_message=transcript)
             response = await self._executor.run(
                 system_prompt=system_prompt,
-                user_message=fake_update_text,
+                user_message=transcript,
                 tools=intent.tools,
                 session=session,
                 security_profile=session.security_profile,
             )
-            session.add_turn("user", fake_update_text)
+            session.add_turn("user", transcript)
             session.add_turn("assistant", response)
         except Exception as exc:
             log.exception("pipeline error (voice)")
@@ -625,39 +624,17 @@ class TelegramChannel:
 
         await self._send_response(update, response)
 
-    async def _transcribe_groq(self, audio_bytes: bytes) -> str | None:
-        """Transcreve áudio via Groq Whisper. Retorna texto ou None em caso de erro."""
-        groq_key = self._config.expand("~/.claudio/config.json")
-        # Tenta ler a chave do config ou env
-        import json, os
-        api_key = os.environ.get("GROQ_API_KEY", "")
-        if not api_key:
-            cfg_path = self._config.expand("~/.claudio/config.json")
-            if cfg_path.exists():
-                data = json.loads(cfg_path.read_text())
-                api_key = data.get("groq_api_key", "")
-        if not api_key:
-            log.warning("GROQ_API_KEY não configurada — STT indisponível")
-            return None
-
-        import httpx
+        # Resposta em áudio (TTS)
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                r = await client.post(
-                    "https://api.groq.com/openai/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    files={
-                        "file": ("audio.ogg", audio_bytes, "audio/ogg"),
-                        "model": (None, "whisper-large-v3-turbo"),
-                        "language": (None, "pt"),
-                        "response_format": (None, "json"),
-                    },
+            audio_data = await synthesize(response)
+            if audio_data:
+                import io
+                await update.message.reply_voice(
+                    voice=io.BytesIO(audio_data),
+                    filename="resposta.mp3",
                 )
-                r.raise_for_status()
-                return r.json().get("text", "")
         except Exception as exc:
-            log.warning("groq transcription falhou: %s", exc)
-            return None
+            log.warning("tts: falha ao enviar áudio: %s", exc)
 
     async def _cmd_debug(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not update.effective_user or not self._is_allowed(update.effective_user.id):
