@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 log = logging.getLogger("claudio.stt_tts")
 
-_TTS_VOICE = "pt-BR-FranciscaNeural"
+_TTS_VOICE = "pt-BR-AntonioNeural"
 _WHISPER_MODEL_SIZE = "large-v3"
 _WHISPER_DEVICE = "cpu"
 _WHISPER_COMPUTE = "int8"
