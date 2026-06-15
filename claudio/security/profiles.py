@@ -21,7 +21,6 @@ _DESTRUCTIVE_PATTERNS = [
     re.compile(r"\bdd\s+if=", re.I),
     re.compile(r"\bmkfs\b", re.I),
     re.compile(r"\bshred\b", re.I),
-    re.compile(r"\bformat\b", re.I),
 ]
 
 
