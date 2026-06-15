@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,7 +25,7 @@ class AgentMeshAudit:
             with sqlite3.connect(str(self._db_path), timeout=5) as conn:
                 conn.execute(
                     "INSERT INTO audit_log (ts, agent, event, data) VALUES (?, ?, ?, ?)",
-                    (datetime.utcnow().isoformat(), "claudio", event, payload),
+                    (datetime.now(timezone.utc).isoformat(), "claudio", event, payload),
                 )
         except sqlite3.Error:
             # audit_log é best-effort — nunca deve travar o pipeline principal

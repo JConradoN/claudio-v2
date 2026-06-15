@@ -3,7 +3,7 @@ from __future__ import annotations
 import itertools
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ _id_counter = itertools.count(1)
 class Turn:
     role: str          # "user" | "assistant"
     content: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     run_id: str = ""
 
 
@@ -29,12 +29,12 @@ class Session:
     project: str | None
     security_profile: str
     history: list[Turn] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    last_active: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def add_turn(self, role: str, content: str, run_id: str = "") -> None:
         self.history.append(Turn(role=role, content=content, run_id=run_id))
-        self.last_active = datetime.utcnow()
+        self.last_active = datetime.now(timezone.utc)
 
     def to_prompt_history(self, max_turns: int = 20) -> list[dict]:
         return [
@@ -45,7 +45,7 @@ class Session:
     def reset(self) -> None:
         self.history.clear()
         self.project = None
-        self.last_active = datetime.utcnow()
+        self.last_active = datetime.now(timezone.utc)
 
 
 class SessionStore:
@@ -68,7 +68,7 @@ class SessionStore:
         if key in self._sessions:
             s = self._sessions[key]
             # Verifica TTL
-            age = (datetime.utcnow() - s.last_active).total_seconds()
+            age = (datetime.now(timezone.utc) - s.last_active).total_seconds()
             if age > self._ttl:
                 del self._sessions[key]
             else:
