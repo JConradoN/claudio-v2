@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 import subprocess
 
-FETCH_SCRIPT = "/home/conrado/repos/producao/fox-vault/scripts/vault_ops/fetch_social.py"
-FETCH_PYTHON = "/home/conrado/repos/producao/fox-vault/.venv/bin/python"
+_AGENTFORGE_ROOT = "/home/conrado/repos/estudo/agents-framework"
+_AGENTFORGE_PYTHON = "/home/conrado/repos/estudo/agents-framework/.venv/bin/python"
+_LINK_READER_DIR = f"{_AGENTFORGE_ROOT}/agents/link-reader"
 
 # Comandos permitidos no perfil read-only
 _READONLY_ALLOWLIST = re.compile(
@@ -26,11 +27,11 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
-            "name": "fetch_social",
+            "name": "read_link",
             "description": (
-                "Busca e lê o conteúdo de uma URL (LinkedIn, artigos, posts). "
-                "Usa browser com cookies autenticados. Retorna o texto extraído. "
-                "Use quando o usuário pedir para ler, analisar ou resumir um link."
+                "Lê e analisa uma URL (LinkedIn, artigos, posts, qualquer página web). "
+                "Usa browser autenticado via agente especializado. "
+                "Use sempre que o usuário enviar um link ou pedir para ler/analisar uma URL."
             ),
             "parameters": {
                 "type": "object",
@@ -38,11 +39,6 @@ TOOL_SCHEMAS = [
                     "url": {
                         "type": "string",
                         "description": "URL completa a ser acessada.",
-                    },
-                    "analyze": {
-                        "type": "boolean",
-                        "description": "Se true, gera análise via LLM. Se false, retorna só o texto bruto.",
-                        "default": True,
                     },
                 },
                 "required": ["url"],
@@ -72,21 +68,36 @@ TOOL_SCHEMAS = [
 ]
 
 
-def fetch_social(url: str, analyze: bool = True) -> str:
-    """Busca URL via Scrapling+cookies e opcionalmente analisa com LLM."""
-    cmd = [FETCH_PYTHON, FETCH_SCRIPT, url]
-    if not analyze:
-        cmd.append("--no-analyze")
+def read_link(url: str) -> str:
+    """Delega leitura de URL ao agente link-reader do AgentForge."""
+    import json as _json
+    cmd = [
+        _AGENTFORGE_PYTHON, "-m", "agentforge.cli.main", "run",
+        "--agent-dir", _LINK_READER_DIR,
+        "--input", url,
+        "--mode", "raw",
+    ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        output = result.stdout or result.stderr or "(sem output)"
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=300,
+            cwd=_AGENTFORGE_ROOT,
+            env={**__import__("os").environ, "PYTHONPATH": f"{_AGENTFORGE_ROOT}/src"},
+        )
+        raw = result.stdout.strip()
+        if not raw:
+            return result.stderr or "(sem output do agente)"
+        try:
+            data = _json.loads(raw)
+            output = data.get("output", raw)
+        except _json.JSONDecodeError:
+            output = raw
         if len(output) > 6000:
             output = output[:6000] + "\n... (truncado)"
         return output
     except subprocess.TimeoutExpired:
-        return "[TIMEOUT] fetch_social demorou mais de 120s"
+        return "[TIMEOUT] link-reader demorou mais de 180s"
     except Exception as exc:
-        return f"[ERRO] fetch_social: {exc}"
+        return f"[ERRO] read_link: {exc}"
 
 
 def run_bash(command: str, security_profile: str = "execute") -> str:

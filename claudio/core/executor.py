@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, AsyncIterator, Any
 import httpx
 
 from claudio.core.model_manager import _KEEP_ALIVE
-from claudio.core.tools import TOOL_SCHEMAS, run_bash, fetch_social
+from claudio.core.tools import TOOL_SCHEMAS, run_bash, read_link
 
 if TYPE_CHECKING:
     from claudio.audit import AuditLog
@@ -178,12 +178,11 @@ class Executor:
             if is_destructive(command) and security_profile != "privileged":
                 return f"[BLOQUEADO] Comando destrutivo requer perfil 'privileged': {command[:80]}"
             return run_bash(command, security_profile)
-        if tool_name == "fetch_social":
+        if tool_name == "read_link":
             url = args.get("url", "")
             if not url:
                 return "[ERRO] Parâmetro 'url' obrigatório"
-            analyze = args.get("analyze", True)
-            return fetch_social(url, analyze)
+            return read_link(url)
         return f"[ERRO] Tool desconhecida: {tool_name}"
 
     async def _call_ollama(

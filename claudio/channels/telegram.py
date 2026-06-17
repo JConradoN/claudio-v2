@@ -50,7 +50,11 @@ def _md_to_telegram(text: str) -> tuple[str, str | None]:
     Retorna (texto_formatado, parse_mode | None).
     Usa MarkdownV2 quando o texto tem formatação; plain text caso contrário.
     """
-    # Detecta se há formatação relevante
+    # Se o texto já está em MarkdownV2 (LLM gerou diretamente), passthrough
+    if re.search(r"\\\(|\\\[|\\\.", text):
+        return text, ParseMode.MARKDOWN_V2
+
+    # Detecta se há formatação relevante (Markdown padrão)
     has_format = bool(re.search(r"\*\*|`|```|^#{1,3} ", text, re.M))
     if not has_format:
         return text, None

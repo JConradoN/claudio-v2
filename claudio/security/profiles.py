@@ -6,8 +6,8 @@ import re
 _PROFILE_TOOLS: dict[str, set[str]] = {
     "chat":       set(),
     "read":       {"read_file", "list_dir", "search_files"},
-    "execute":    {"read_file", "list_dir", "search_files", "run_bash", "fetch_social"},
-    "privileged": {"read_file", "list_dir", "search_files", "run_bash", "write_file", "delete_file", "fetch_social"},
+    "execute":    {"read_file", "list_dir", "search_files", "run_bash", "read_link"},
+    "privileged": {"read_file", "list_dir", "search_files", "run_bash", "write_file", "delete_file", "read_link"},
 }
 
 # Padrões de comandos destrutivos que requerem confirmação mesmo em 'privileged'

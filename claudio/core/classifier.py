@@ -52,6 +52,10 @@ def _looks_narrative(text: str, keyword: str) -> bool:
 _COMMAND_RULES: list[tuple[str, bool, str, list[str], str | None, list[str]]] = [
     # (keyword, exact_match, type, tools, agent, context_hints)
 
+    # URLs — aciona read_link automaticamente
+    ("https://", False, "execute", ["read_link"], None, ["url"]),
+    ("http://", False, "execute", ["read_link"], None, ["url"]),
+
     # Cron
     ("todo dia", False, "cron", [], None, ["schedule", "recurring"]),
     ("toda semana", False, "cron", [], None, ["schedule", "recurring"]),
