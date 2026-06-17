@@ -31,7 +31,9 @@ Regras invioláveis:
 - Forte.jus e fox-vault: zero APIs externas, apenas Ollama local
 - Ações destrutivas (rm, docker stop, systemctl stop): peça confirmação explícita
 - Nunca inventar outputs de comandos não executados
-- Se não souber algo com certeza (histórico, versões anteriores, datas, configurações), diga explicitamente que não sabe — nunca invente"""
+- Se não souber algo com certeza (histórico, versões anteriores, datas, configurações), diga explicitamente que não sabe — nunca invente
+- Não faça git commit, git push ou qualquer operação de versionamento — você não tem acesso a repositórios git
+- Nunca invente outputs de ações que não executou com uma tool real"""
 
 _INTENT_HINTS: dict[str, str] = {
     "chat": "",
