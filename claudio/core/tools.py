@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 import subprocess
 
-_AGENTFORGE_ROOT = "/home/conrado/repos/estudo/agents-framework"
-_AGENTFORGE_PYTHON = "/home/conrado/repos/estudo/agents-framework/.venv/bin/python"
-_LINK_READER_DIR = f"{_AGENTFORGE_ROOT}/agents/link-reader"
+_FETCH_SCRIPT = "/home/conrado/repos/producao/fox-vault/scripts/vault_ops/fetch_social.py"
+_FETCH_PYTHON = "/home/conrado/repos/producao/fox-vault/.venv/bin/python"
 
 # Comandos permitidos no perfil read-only
 _READONLY_ALLOWLIST = re.compile(
@@ -69,33 +68,16 @@ TOOL_SCHEMAS = [
 
 
 def read_link(url: str) -> str:
-    """Delega leitura de URL ao agente link-reader do AgentForge."""
-    import json as _json
-    cmd = [
-        _AGENTFORGE_PYTHON, "-m", "agentforge.cli.main", "run",
-        "--agent-dir", _LINK_READER_DIR,
-        "--input", url,
-        "--mode", "raw",
-    ]
+    """Busca URL via Scrapling+cookies e retorna texto bruto para análise pelo Cláudio."""
+    cmd = [_FETCH_PYTHON, _FETCH_SCRIPT, url, "--no-analyze"]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
-            cwd=_AGENTFORGE_ROOT,
-            env={**__import__("os").environ, "PYTHONPATH": f"{_AGENTFORGE_ROOT}/src"},
-        )
-        raw = result.stdout.strip()
-        if not raw:
-            return result.stderr or "(sem output do agente)"
-        try:
-            data = _json.loads(raw)
-            output = data.get("output", raw)
-        except _json.JSONDecodeError:
-            output = raw
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        output = result.stdout or result.stderr or "(sem output)"
         if len(output) > 6000:
             output = output[:6000] + "\n... (truncado)"
         return output
     except subprocess.TimeoutExpired:
-        return "[TIMEOUT] link-reader demorou mais de 180s"
+        return "[TIMEOUT] read_link: browser demorou mais de 120s"
     except Exception as exc:
         return f"[ERRO] read_link: {exc}"
 
