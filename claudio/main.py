@@ -99,8 +99,8 @@ async def run() -> None:
         send_message_fn=_send_telegram,
     )
 
-    # 7. Warmup
-    if config.model_warmup_on_startup:
+    # 7. Warmup — skip se usando llamacpp (TurboQuant gerencia seu próprio modelo)
+    if config.model_warmup_on_startup and not config.use_llamacpp:
         log.info("warmup: carregando %s", config.default_model)
         try:
             await model_manager.ensure(config.default_model)

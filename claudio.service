@@ -1,15 +1,18 @@
 [Unit]
 Description=Cláudio v2 — assistente pessoal
-After=network.target
+After=network.target docker.service
+Wants=docker.service
 
 [Service]
 Type=simple
+ExecStartPre=/bin/bash -c 'until curl -sf http://localhost:8082/health >/dev/null 2>&1; do echo "aguardando TurboQuant..."; sleep 5; done'
 ExecStart=%h/.local/share/claudio-venv/bin/python -m claudio.main
 WorkingDirectory=%h/repos/projetos/claudio-v2
 Environment=PYTHONPATH=%h/repos/projetos/claudio-v2
 Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
-RestartSec=5
+RestartSec=10
+TimeoutStartSec=300
 
 [Install]
 WantedBy=default.target

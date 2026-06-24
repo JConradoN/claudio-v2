@@ -75,8 +75,8 @@ class MemoryManager:
         self,
         query: str,
         context_hints: list[str] | None = None,
-        limit: int = 5,
-        max_tokens: int = 300,
+        limit: int = 10,
+        max_tokens: int = 2000,
     ) -> list[MemoryFragment]:
         """Busca em mem0 + agent_mesh em paralelo. Retorna fragmentos ordenados por score."""
         if not query.strip():
@@ -150,8 +150,8 @@ class MemoryManager:
     async def search_kuzu(
         self,
         query: str,
-        limit: int = 4,
-        max_tokens: int = 200,
+        limit: int = 8,
+        max_tokens: int = 1500,
     ) -> list[MemoryFragment]:
         """Busca separada no Kuzu (grafo de decisões/modelos). Chamada pelo ContextBuilder."""
         try:

@@ -42,6 +42,11 @@ class Config:
     log_retention_days: int = 30
     runlog_max_bytes: int = 50 * 1024 * 1024
 
+    # LLM alternativo: llama.cpp / TurboQuant (OpenAI-compat)
+    use_llamacpp: bool = False
+    llamacpp_url: str = "http://localhost:8082"
+    llamacpp_thinking_budget: int = 0  # 0=sem thinking; >0=habilita thinking com N tokens
+
     # AgentForge
     agentforge_path: str = "~/repos/estudo/agents-framework"
     agentforge_agents_dir: str = "~/repos/estudo/agents-framework/agents"

@@ -46,61 +46,37 @@ def _split_message(text: str, limit: int = _MAX_MSG) -> list[str]:
 
 def _md_to_telegram(text: str) -> tuple[str, str | None]:
     """
-    Converte markdown básico para Telegram.
-    Retorna (texto_formatado, parse_mode | None).
-    Usa MarkdownV2 quando o texto tem formatação; plain text caso contrário.
+    Normaliza a saída do modelo para plain text adequado ao Telegram.
+    Remove toda sintaxe markdown e MarkdownV2 — mantém apenas texto, emojis e bullets.
+    Retorna sempre (texto_limpo, None) para evitar rejeição do Telegram por MarkdownV2 inválido.
     """
-    # Se o texto já está em MarkdownV2 (LLM gerou diretamente), passthrough
-    if re.search(r"\\\(|\\\[|\\\.", text):
-        return text, ParseMode.MARKDOWN_V2
+    # Remove MarkdownV2 escapes (\. \( \) \[ \] etc.) — mantém o char
+    text = re.sub(r"\\([_\[\]()~`>#+\-=|{}.!\\])", r"\1", text)
 
-    # Detecta se há formatação relevante (Markdown padrão)
-    has_format = bool(re.search(r"\*\*|`|```|^#{1,3} ", text, re.M))
-    if not has_format:
-        return text, None
+    # Remove **bold** e *bold* → texto simples
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
 
-    # Converte para MarkdownV2
-    # 1. Blocos de código (preservar antes de escapar)
-    code_blocks: list[str] = []
-    def _stash_code(m: re.Match) -> str:
-        code_blocks.append(m.group(0))
-        return f"\x00CODE{len(code_blocks)-1}\x00"
+    # Remove _italic_ e __underline__
+    text = re.sub(r"__(.+?)__", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"_([^_\n]+)_", r"\1", text)
 
-    text = re.sub(r"```[\s\S]*?```", _stash_code, text)
-    text = re.sub(r"`[^`]+`", _stash_code, text)
+    # Remove # Headings → texto simples (sem o #)
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
 
-    # 2. Escapa chars especiais do MarkdownV2 (exceto os que vamos usar)
-    _SPECIAL = r"\_[]()~>#+=|{}.!"
-    text = re.sub(r"([" + re.escape(_SPECIAL) + r"])", r"\\\1", text)
+    # Remove ``` blocos de código (mantém conteúdo)
+    text = re.sub(r"```\w*\n?([\s\S]*?)```", r"\1", text)
 
-    # 3. Converte **bold** → *bold*
-    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    # Remove `inline code` ticks
+    text = re.sub(r"`([^`]+)`", r"\1", text)
 
-    # 4. Converte _italic_ → _italic_ (já escapado corretamente)
-    # (não precisam de conversão, mas o escape acima quebrou — restaura)
-    text = re.sub(r"\\_(.+?)\\_", r"_\1_", text)
+    # Remove | tabelas markdown (linhas que são só |---|---|)
+    text = re.sub(r"^\s*\|[-:| ]+\|\s*$", "", text, flags=re.MULTILINE)
 
-    # 5. Converte # Heading → *Heading*
-    text = re.sub(r"^#{1,3}\s+(.+)$", r"*\1*", text, flags=re.M)
+    # Limpa linhas em branco duplicadas
+    text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # 6. Restaura code blocks
-    def _restore_code(m: re.Match) -> str:
-        idx = int(m.group(1))
-        orig = code_blocks[idx]
-        if orig.startswith("```"):
-            lang_match = re.match(r"```(\w*)\n?([\s\S]*?)```", orig)
-            if lang_match:
-                code = lang_match.group(2).rstrip()
-                return f"```\n{code}\n```"
-        # inline code
-        inner = orig[1:-1]
-        # Escapa chars especiais dentro do inline code para MarkdownV2
-        inner = inner.replace("\\", "\\\\").replace("`", "\\`")
-        return f"`{inner}`"
-
-    text = re.sub(r"\x00CODE(\d+)\x00", _restore_code, text)
-
-    return text, ParseMode.MARKDOWN_V2
+    return text.strip(), None
 
 
 class TelegramChannel:
