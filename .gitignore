@@ -1,3 +1,24 @@
-claudio/__pycache__
 **/__pycache__
 *.pyc
+*.pyo
+
+# Config real (nunca commitar — use config.example.json)
+config.json
+*.local.json
+
+# Dados do usuário
+*.db
+*.sqlite
+logs/
+*.log
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*~
