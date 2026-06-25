@@ -22,11 +22,15 @@ class AgentMeshAudit:
             return
         payload = json.dumps({"level": level, **data}, ensure_ascii=False, default=str)
         try:
-            with sqlite3.connect(str(self._db_path), timeout=5) as conn:
+            conn = sqlite3.connect(str(self._db_path), timeout=5)
+            try:
                 conn.execute(
                     "INSERT INTO audit_log (ts, agent, event, data) VALUES (?, ?, ?, ?)",
                     (datetime.now(timezone.utc).isoformat(), "claudio", event, payload),
                 )
+                conn.commit()
+            finally:
+                conn.close()
         except sqlite3.Error:
             # audit_log é best-effort — nunca deve travar o pipeline principal
             pass
